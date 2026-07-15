@@ -12,6 +12,8 @@ python -m http.server 8080
 
 随后访问 `http://127.0.0.1:8080/QuantSim.html`。
 
+也可访问已经部署好的在线链接`https://quantsim.pages.dev/`
+
 ## 功能
 
 - 虚拟账户、持仓、手续费、交易历史与浏览器本地持久化。
