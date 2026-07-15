@@ -12,7 +12,7 @@ python -m http.server 8080
 
 随后访问 `http://127.0.0.1:8080/QuantSim.html`。
 
-也可访问已经部署好的在线链接`https://quantsim.pages.dev/`
+也可访问已经部署好的在线链接`https://quantsim.pages.dev/`。
 
 ## 功能
 
