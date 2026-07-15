@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🤖 AI量化交易模拟器 - QuantSim</title>
+    <!-- Chart.js 备用：若加载失败，图表功能会自动跳过，不影响交易 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
+            onerror="console.warn('Chart.js 加载失败，图表将不可用');window.Chart = undefined;">
+    </script>
+    <style>
+        :root {
+            --bg: #0a0e14;
+            --panel: #131820;
+            --card: #1a1f2b;
+            --border: #252b36;
+            --text: #c8cdd6;
+            --text-secondary: #7d8590;
+            --green: #00c853;
+            --red: #ff3d4f;
+            --blue: #3b82f6;
+            --gold: #f0b90b;
+            --accent: #6c5ce7;
+            --hover: #1e2430;
+            --radius: 12px;
+            --radius-sm: 8px;
+            --transition: 0.2s ease;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; overflow: hidden; }
+        body { font-family: 'Inter', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+        .top-bar { min-height: 64px; background: var(--panel); border-bottom: 1px solid var(--border); padding: 8px 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; position: relative; z-index: 100; backdrop-filter: blur(10px); }
+        .top-bar .logo { font-size: 1.3rem; font-weight: 700; letter-spacing: -0.5px; display: flex; align-items: center; gap: 8px; color: #fff; white-space: nowrap; }
+        .top-bar .logo .icon { width: 34px; height: 34px; border-radius: 8px; background: linear-gradient(135deg, #6c5ce7, #3b82f6); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; }
+        .account-summary { display: flex; gap: 20px; flex-wrap: wrap; align-items: center; }
+        .account-item { text-align: center; min-width: 70px; }
+        .account-item .label { font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+        .account-item .value { font-weight: 700; font-size: 1rem; color: #fff; }
+        .account-item .value.positive { color: var(--green); }
+        .account-item .value.negative { color: var(--red); }
+        .btn { padding: 8px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: var(--transition); white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; }
+        .btn:hover { background: var(--hover); border-color: #4a5568; }
+        .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+        .btn-primary:hover { background: #5b4bd5; border-color: #5b4bd5; box-shadow: 0 4px 15px rgba(108, 92, 231, 0.3); }
+        .btn-danger { background: transparent; border-color: var(--red); color: var(--red); }
+        .btn-danger:hover { background: rgba(255, 61, 79, 0.1); border-color: #ff5566; }
+        .btn-sm { padding: 5px 10px; font-size: 0.75rem; border-radius: 6px; }
+        .btn-xs { padding: 3px 8px; font-size: 0.7rem; border-radius: 5px; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+        .main-container { height: calc(100vh - 64px); display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(320px, .85fr); gap: 12px; padding: 12px; max-width: 1680px; margin: 0 auto; }
+        .main-container > div { min-height: 0; }
+        .main-container > div:first-child { height: 100%; }
+        .main-container > div:first-child > .panel:first-child { flex: 1 1 0; min-height: 0; }
+        .main-container > div:first-child > .panel:nth-child(2) { display: none; }
+        .main-container > div:first-child > .panel:nth-child(3) { flex: 1 1 0; min-height: 0; }
+        .main-container > div:nth-child(2) > .panel:first-child { flex: 1 1 auto; min-height: 0; }
+        .main-container > div:nth-child(2) > .panel:nth-child(2) { flex: 0 0 auto; }
+        .main-container > div:nth-child(2) > .panel:nth-child(3) { flex: 0 0 auto; }
+        .main-container .panel-body { max-height: none; }
+        .main-container .panel-body[style*="max-height"] { max-height: none !important; height: calc(100% - 49px); }
+        .main-container .panel { min-height: 0; }
+        .data-source { font-size: .62rem; margin-left: 5px; vertical-align: middle; }
+        .data-source.live { color: #4ade80; }
+        .data-source.simulated { color: var(--gold); }
+        .source-status { color: var(--text-secondary); font-size: .7rem; white-space: nowrap; }
+        .chart-modal { width: min(920px, 94vw); max-width: none; }
+        .chart-modal .chart-container { height: min(58vh, 480px); }
+        @media (max-width: 1100px) { html, body { height: auto; overflow: auto; } .main-container { height: auto; grid-template-columns: 1fr; } .main-container > div:first-child > .panel:first-child, .main-container > div:first-child > .panel:nth-child(3), .main-container > div:nth-child(2) > .panel:first-child { flex: 0 0 auto; } .main-container .panel-body[style*="max-height"] { height: auto; max-height: 360px !important; } }
+        .panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+        .panel-header { padding: 14px 18px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 0.9rem; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: rgba(255,255,255,0.01); }
+        .panel-body { padding: 16px 18px; max-height: 500px; overflow-y: auto; }
+        .panel-body.no-padding { padding: 0; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        th { text-align: left; padding: 10px 12px; color: var(--text-secondary); font-weight: 500; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--panel); }
+        td { padding: 10px 12px; border-bottom: 1px solid rgba(37,43,54,0.5); }
+        tr:hover td { background: rgba(255,255,255,0.015); }
+        .price-up { color: var(--green); font-weight: 600; }
+        .price-down { color: var(--red); font-weight: 600; }
+        .tag { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; }
+        .tag-buy { background: rgba(0,200,83,0.15); color: var(--green); }
+        .tag-sell { background: rgba(255,61,79,0.15); color: var(--red); }
+        .tag-hold { background: rgba(123,137,160,0.15); color: #7b89a0; }
+        .tag-ai { background: rgba(108,92,231,0.2); color: #a78bfa; }
+        .chart-container { position: relative; width: 100%; height: 300px; }
+        .chart-container canvas { width: 100% !important; height: 100% !important; }
+        input[type="text"], input[type="number"], input[type="password"], select { padding: 9px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--card); color: #fff; font-size: 0.85rem; font-family: inherit; transition: var(--transition); width: 100%; outline: none; }
+        input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(108,92,231,0.1); }
+        select { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237d8590' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px; }
+        .input-group { display: flex; gap: 8px; align-items: center; }
+        .input-group input { flex: 1; }
+        label { font-size: 0.78rem; color: var(--text-secondary); display: block; margin-bottom: 4px; font-weight: 500; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; animation: pulse 2s infinite; }
+        .status-dot.online { background: var(--green); box-shadow: 0 0 8px rgba(0,200,83,0.5); }
+        .status-dot.offline { background: #ff9800; box-shadow: 0 0 8px rgba(255,152,0,0.5); animation: none; }
+        @keyframes pulse { 0%,100%{ opacity:1; } 50%{ opacity:0.4; } }
+        .modal-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:200; display:flex; align-items:center; justify-content:center; animation:fadeIn 0.2s ease; }
+        @keyframes fadeIn { from{ opacity:0; } to{ opacity:1; } }
+        .modal { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:24px; width:90%; max-width:500px; max-height:80vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.5); }
+        .modal h3 { margin-bottom:16px; font-size:1.1rem; color:#fff; }
+        .modal .form-group { margin-bottom:14px; }
+        .modal .actions { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
+        ::-webkit-scrollbar { width:5px; height:5px; } ::-webkit-scrollbar-track { background:transparent; } ::-webkit-scrollbar-thumb { background:#2a3040; border-radius:10px; }
+        .toast-container { position:fixed; top:20px; right:20px; z-index:300; display:flex; flex-direction:column; gap:8px; }
+        .toast { padding:12px 18px; border-radius:var(--radius-sm); font-size:0.85rem; font-weight:500; animation:slideIn 0.3s ease; box-shadow:0 8px 30px rgba(0,0,0,0.4); max-width:380px; }
+        .toast-success { background:#0d3320; border:1px solid #1a5c3a; color:#4ade80; }
+        .toast-error { background:#3d1018; border:1px solid #5c1a28; color:#f87171; }
+        .toast-info { background:#0f1b35; border:1px solid #1a3060; color:#60a5fa; }
+        @keyframes slideIn { from{ transform:translateX(100%); opacity:0; } to{ transform:translateX(0); opacity:1; } }
+        .flash-green { animation:flashG 0.6s ease; } .flash-red { animation:flashR 0.6s ease; }
+        @keyframes flashG { 0%,100%{ background:transparent; } 50%{ background:rgba(0,200,83,0.2); } }
+        @keyframes flashR { 0%,100%{ background:transparent; } 50%{ background:rgba(255,61,79,0.2); } }
+        .text-muted { color:var(--text-secondary); font-size:0.78rem; }
+        .mb-2 { margin-bottom:8px; } .mt-2 { margin-top:8px; }
+        .flex-row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+        .badge { display:inline-block; padding:3px 7px; border-radius:20px; font-size:0.68rem; font-weight:600; }
+        .badge-ai { background:rgba(108,92,231,0.25); color:#b8a9ff; }
+    </style>
+</head>
+<body>
+<div class="toast-container" id="toastContainer"></div>
+<div class="top-bar" id="topBar">
+    <div class="logo"><div class="icon">📈</div><span>QuantSim</span><span class="badge badge-ai">AI驱动</span></div>
+    <div class="account-summary">
+        <div class="account-item"><div class="label">💰 总资产</div><div class="value" id="totalAssets">--</div></div>
+        <div class="account-item"><div class="label">💵 现金</div><div class="value" id="cashValue">--</div></div>
+        <div class="account-item"><div class="label">📊 持仓市值</div><div class="value" id="holdingsValue">--</div></div>
+        <div class="account-item"><div class="label">📈 总盈亏</div><div class="value" id="totalPnl">--</div></div>
+        <div class="account-item"><div class="label">🔌 数据</div><div><span class="status-dot online" id="dataStatusDot"></span> <span style="font-size:0.7rem;" id="dataStatusText">在线</span></div></div>
+    </div>
+    <div class="flex-row gap-2">
+        <button class="btn btn-sm" onclick="refreshAllPrices()">🔄 刷新</button>
+        <button class="btn btn-sm" onclick="openSettingsModal()">⚙️ 设置</button>
+        <button class="btn btn-primary btn-sm" onclick="openAIPanel()">🤖 AI分析</button>
+    </div>
+</div>
+
+<div class="main-container">
+    <div style="display:flex;flex-direction:column;gap:16px;">
+        <div class="panel">
+            <div class="panel-header">
+                <span>📋 市场行情</span>
+                <div class="flex-row gap-2">
+                    <select id="marketFilter" onchange="filterMarket()" style="width:auto;padding:6px 24px 6px 10px;font-size:0.75rem;">
+                        <option value="all">全部市场</option><option value="US">🇺🇸 美股</option><option value="CN">🇨🇳 A股</option><option value="crypto">₿ 加密</option>
+                    </select>
+                    <span class="text-muted" style="font-size:0.7rem;" id="lastUpdateTime">--</span>
+                </div>
+            </div>
+            <div class="panel-body no-padding" style="max-height:380px;overflow-y:auto;">
+                <table id="marketTable"><thead><tr><th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th><th>成交量</th><th>操作</th></tr></thead><tbody id="marketTableBody"></tbody></table>
+            </div>
+        </div>
+        <div class="panel">
+            <div class="panel-header"><span>📉 价格走势</span><select id="chartSymbolSelect" onchange="updateChart()" style="width:auto;padding:6px 24px 6px 10px;font-size:0.75rem;"></select></div>
+            <div class="panel-body"><div class="chart-container"><canvas id="priceChart"></canvas></div></div>
+        </div>
+        <div class="panel">
+            <div class="panel-header"><span>📜 交易记录</span><button class="btn btn-xs" onclick="clearTradeHistory()">清空记录</button></div>
+            <div class="panel-body no-padding" style="max-height:250px;overflow-y:auto;">
+                <table id="tradeHistoryTable"><thead><tr><th>时间</th><th>代码</th><th>方向</th><th>数量</th><th>价格</th><th>金额</th><th>来源</th></tr></thead><tbody id="tradeHistoryBody"></tbody></table>
+            </div>
+        </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:16px;">
+        <div class="panel">
+            <div class="panel-header"><span>💼 我的持仓</span><span class="text-muted" style="font-size:0.7rem;" id="positionCount">0只</span></div>
+            <div class="panel-body no-padding" style="max-height:300px;overflow-y:auto;">
+                <table id="positionsTable"><thead><tr><th>代码</th><th>数量</th><th>成本</th><th>现价</th><th>盈亏</th><th>操作</th></tr></thead><tbody id="positionsBody"></tbody></table>
+            </div>
+        </div>
+        <div class="panel">
+            <div class="panel-header"><span>⚡ 快速交易</span></div>
+            <div class="panel-body">
+                <div class="form-group mb-2"><label>股票代码</label><select id="quickTradeSymbol"><option value="">选择股票...</option></select></div>
+                <div class="form-group mb-2"><label>数量（股）</label><input type="number" id="quickTradeQty" value="10" min="1" step="1"></div>
+                <div class="flex-row gap-2" style="margin-top:8px;">
+                    <button class="btn btn-primary btn-sm" style="flex:1;background:var(--green);border-color:var(--green);" onclick="quickTrade('buy')">🟢 买入</button>
+                    <button class="btn btn-danger btn-sm" style="flex:1;" onclick="quickTrade('sell')">🔴 卖出</button>
+                </div>
+                <div class="text-muted mt-2" style="font-size:0.7rem;" id="quickTradeInfo"></div>
+            </div>
+        </div>
+        <div class="panel" style="border-color:rgba(108,92,231,0.4);">
+            <div class="panel-header"><span>🤖 AI交易状态</span><span class="badge badge-ai" id="aiStatusBadge">待配置</span></div>
+        <div class="panel-body" style="font-size:0.78rem;">
+            <div id="aiStatusText" class="text-muted">请先设置API密钥以启用AI交易</div>
+            <div id="lastAiAnalysis" class="text-muted mt-2" style="padding:8px;background:rgba(108,92,231,0.08);border-radius:6px;line-height:1.45;max-height:105px;overflow-y:auto;">暂无 AI 分析结果</div>
+            <button class="btn btn-primary btn-sm mt-2" style="width:100%;" onclick="openAIPanel()">🤖 打开AI分析面板</button>
+                <button class="btn btn-sm mt-2" style="width:100%;" onclick="toggleAutoTrade()" id="autoTradeBtn" disabled>⏱ 自动交易：关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- AI设置弹窗 -->
+<div class="modal-overlay" id="aiModal" style="display:none;">
+    <div class="modal">
+        <h3>🤖 AI量化分析</h3>
+        <div class="form-group"><label>API提供商</label><select id="aiApiProvider" onchange="updateApiUrl()"><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="custom">自定义</option></select></div>
+        <div class="form-group"><label>API Base URL</label><input type="text" id="aiApiUrl" placeholder="https://api.openai.com/v1"></div>
+        <div class="form-group"><label>API Key</label><input type="password" id="aiApiKey" placeholder="sk-..."><span class="text-muted" style="font-size:0.65rem;">密钥仅保存在本地浏览器</span></div>
+        <div class="form-group"><label>Finnhub API Key（美股实时行情）</label><input type="password" id="finnhubKey" placeholder="填写 Finnhub 免费 API Key"><span class="text-muted" style="font-size:0.65rem;">未填写时，美股将只能使用模拟行情。</span></div>
+        <div class="form-group"><label>模型名称</label><input type="text" id="aiModel" value="gpt-4o-mini"></div>
+        <div class="form-group"><label>自动分析频率（分钟）</label><input type="number" id="aiAnalysisInterval" value="5" min="1" max="1440" step="1"><span class="text-muted" style="font-size:0.65rem;">启用自动交易后，默认每 5 分钟调用一次 AI</span></div>
+        <div class="form-group"><label>分析提示（可选附加说明）</label><textarea id="aiExtraPrompt" rows="2" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:#fff;font-family:inherit;font-size:0.8rem;resize:vertical;" placeholder="例如：偏向稳健投资，单只股票不超过20%仓位..."></textarea></div>
+        <div style="background:rgba(108,92,231,0.08);border-radius:8px;padding:12px;margin:12px 0;font-size:0.75rem;color:#b8a9ff;">💡 AI将分析当前市场数据、您的持仓和现金状况，给出具体交易建议（买入/卖出/持有），系统将自动执行AI的决策。</div>
+        <div class="actions">
+            <button class="btn" onclick="closeAIPanel()">取消</button>
+            <button class="btn" onclick="saveAISettings()">💾 保存设置</button>
+            <button class="btn btn-primary" onclick="runAIAnalysis()" id="runAiBtn">🚀 立即分析并交易</button>
+        </div>
+        <div id="aiResult" style="margin-top:12px;max-height:200px;overflow-y:auto;font-size:0.78rem;display:none;"></div>
+    </div>
+</div>
+
+<!-- 单标的走势图 -->
+<div class="modal-overlay" id="chartModal" style="display:none;">
+    <div class="modal chart-modal">
+        <div class="panel-header" style="padding:0 0 12px;margin-bottom:12px;"><span id="chartModalTitle">价格走势</span><button class="btn btn-xs" onclick="closeChartModal()">关闭</button></div>
+        <div class="chart-container"><canvas id="modalPriceChart"></canvas></div>
+    </div>
+</div>
+
+<!-- 设置弹窗 -->
+<div class="modal-overlay" id="settingsModal" style="display:none;">
+    <div class="modal">
+        <h3>⚙️ 账户设置</h3>
+        <div class="form-group"><label>初始虚拟资金</label><input type="number" id="initialCash" value="100000" min="1000" step="1000"></div>
+        <div class="form-group"><label>交易手续费率 (%)</label><input type="number" id="feeRate" value="0.05" min="0" max="5" step="0.01"></div>
+        <div class="form-group"><label>数据刷新间隔 (秒)</label><input type="number" id="refreshInterval" value="30" min="10" max="300" step="5"></div>
+        <div class="actions">
+            <button class="btn" onclick="closeSettingsModal()">取消</button>
+            <button class="btn btn-primary" onclick="saveSettings()">保存</button>
+            <button class="btn btn-danger" onclick="resetAccount()">🔄 重置账户</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ==================== 全局状态 ====================
+    const STATE_KEY = 'quantsim_state_v2';
+    // For A shares, configure a prefix such as "https://your-worker.example/?url=" if direct Tencent requests are blocked by CORS.
+    const PROXY_URL = '';
+    let state = {
+        cash: 100000,
+        initialCash: 100000,
+        positions: {},
+        tradeHistory: [],
+        aiSettings: { apiUrl: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini', provider: 'openai', extraPrompt: '', analysisInterval: 5, finnhubKey: '' },
+        autoTradeEnabled: false,
+        autoTradeIntervalId: null,
+        lastAIResult: null,
+        refreshInterval: 30,
+        feeRate: 0.0005,
+        usdToCny: 7.2,
+        priceCache: {},
+        chartPrices: {}
+    };
+
+    const DEFAULT_STOCKS = [
+        { symbol: 'AAPL', name: 'Apple Inc.', market: 'US' },
+        { symbol: 'GOOGL', name: 'Alphabet Inc.', market: 'US' },
+        { symbol: 'MSFT', name: 'Microsoft Corp.', market: 'US' },
+        { symbol: 'AMZN', name: 'Amazon.com Inc.', market: 'US' },
+        { symbol: 'TSLA', name: 'Tesla Inc.', market: 'US' },
+        { symbol: 'META', name: 'Meta Platforms', market: 'US' },
+        { symbol: 'NVDA', name: 'NVIDIA Corp.', market: 'US' },
+        { symbol: 'AMD', name: 'Advanced Micro Devices', market: 'US' },
+        { symbol: 'JPM', name: 'JPMorgan Chase', market: 'US' },
+        { symbol: 'V', name: 'Visa Inc.', market: 'US' },
+        { symbol: '600519.SS', name: '贵州茅台', market: 'CN' },
+        { symbol: '000858.SZ', name: '五粮液', market: 'CN' },
+        { symbol: '300750.SZ', name: '宁德时代', market: 'CN' },
+        { symbol: '002594.SZ', name: '比亚迪', market: 'CN' },
+        { symbol: '601318.SS', name: '中国平安', market: 'CN' },
+        { symbol: '000333.SZ', name: '美的集团', market: 'CN' },
+        { symbol: 'BTC-USD', name: 'Bitcoin USD', market: 'crypto' },
+        { symbol: 'ETH-USD', name: 'Ethereum USD', market: 'crypto' },
+    ];
+
+    // 持久化
+    function saveState() {
+        const toSave = { cash: state.cash, initialCash: state.initialCash, positions: state.positions, tradeHistory: state.tradeHistory.slice(-200), aiSettings: state.aiSettings, refreshInterval: state.refreshInterval, feeRate: state.feeRate, usdToCny: state.usdToCny, lastAIResult: state.lastAIResult };
+        try { localStorage.setItem(STATE_KEY, JSON.stringify(toSave)); } catch(e) {}
+    }
+    function loadState() {
+        try {
+            const saved = localStorage.getItem(STATE_KEY);
+            if (saved) {
+                const p = JSON.parse(saved);
+                state.cash = p.cash ?? 100000; state.initialCash = p.initialCash ?? 100000;
+                state.positions = p.positions ?? {}; state.tradeHistory = p.tradeHistory ?? [];
+                state.aiSettings = { ...state.aiSettings, ...(p.aiSettings || {}) };
+                state.refreshInterval = p.refreshInterval ?? 30; state.feeRate = p.feeRate ?? 0.0005; state.usdToCny = p.usdToCny ?? 7.2;
+                state.lastAIResult = p.lastAIResult || null;
+            }
+        } catch(e) {}
+    }
+
+    // Toast
+    function showToast(msg, type='info') {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`; toast.textContent = msg;
+        container.appendChild(toast);
+        setTimeout(() => { toast.style.opacity='0'; toast.style.transition='opacity 0.3s'; setTimeout(()=>toast.remove(),300); }, 3000);
+    }
+
+    // 数据获取：浏览器直接访问 Binance、Finnhub；A 股保留可配置代理前缀。
+    async function fetchFinnhubPrice(symbol) {
+        const key = state.aiSettings.finnhubKey?.trim();
+        if(!key) return null;
+        try {
+            const response = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${encodeURIComponent(key)}`, { signal: AbortSignal.timeout(8000) });
+            if(!response.ok) throw new Error(`HTTP ${response.status}`);
+            const quote = await response.json();
+            const price = Number(quote.c), previous = Number(quote.pc);
+            if(!Number.isFinite(price) || price <= 0) throw new Error('Invalid Finnhub quote');
+            const change = Number.isFinite(Number(quote.d)) ? Number(quote.d) : price-(previous||price);
+            const changePercent = Number.isFinite(Number(quote.dp)) ? Number(quote.dp) : previous>0 ? change/previous*100 : 0;
+            return { price, change, changePercent, volume: 0, name: symbol, market:'US', histPrices:[{time:new Date(Date.now()-86400000),price:previous||price},{time:new Date(),price}], timestamp:Date.now(), source:'Finnhub' };
+        } catch(e) { return null; }
+    }
+    async function fetchBinancePrice(symbol) {
+        try {
+            const pair = symbol.replace('-USD', 'USDT');
+            const response = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${encodeURIComponent(pair)}`, { signal: AbortSignal.timeout(8000) });
+            if(!response.ok) throw new Error(`HTTP ${response.status}`);
+            const ticker = await response.json();
+            const price = Number(ticker.price);
+            if(!Number.isFinite(price) || price <= 0) throw new Error('Invalid Binance ticker');
+            const previous = state.priceCache[symbol]?.price || price;
+            const change = price-previous;
+            return { price, change, changePercent:previous>0?change/previous*100:0, volume:0, name:`${symbol.replace('-USD','')} / USDT`, market:'crypto', histPrices:[{time:new Date(Date.now()-300000),price:previous},{time:new Date(),price}], timestamp:Date.now(), source:'Binance' };
+        } catch(e) { return null; }
+    }
+    async function fetchTencentPrice(symbol) {
+        try {
+            const code = symbol.split('.')[0];
+            const tencentSymbol = `${symbol.endsWith('.SS') ? 'sh' : 'sz'}${code}`;
+            const target = `https://qt.gtimg.cn/q=${tencentSymbol}`;
+            const requestUrl = PROXY_URL ? `${PROXY_URL}${encodeURIComponent(target)}` : target;
+            const response = await fetch(requestUrl, { signal: AbortSignal.timeout(8000) });
+            if(!response.ok) throw new Error(`HTTP ${response.status}`);
+            // 腾讯财经响应为 GBK/GB18030，而非 UTF-8；直接 response.text() 会造成中文乱码。
+            const bytes = await response.arrayBuffer();
+            const quoteText = new TextDecoder('gb18030').decode(bytes);
+            const match = quoteText.match(/="([^"]+)"/);
+            const fields = match?.[1]?.split('~');
+            const price = Number(fields?.[3]), previous = Number(fields?.[4]);
+            if(!Number.isFinite(price) || price <= 0) throw new Error('Invalid Tencent quote');
+            const change = price-(previous||price);
+            const name = (fields?.[1] || symbol).replace(/\s+/g, '');
+            return { price, change, changePercent:previous>0?change/previous*100:0, volume:Number(fields?.[36])||0, name, market:'CN', histPrices:[{time:new Date(Date.now()-86400000),price:previous||price},{time:new Date(),price}], timestamp:Date.now(), source:'Tencent Finance' };
+        } catch(e) { return null; }
+    }
+    let lastExchangeRateFetch = 0;
+    async function fetchExchangeRate() {
+        if(Date.now()-lastExchangeRateFetch < 60*60*1000) return;
+        lastExchangeRateFetch = Date.now();
+        try {
+            const response = await fetch('https://open.er-api.com/v6/latest/USD', { signal: AbortSignal.timeout(6000) });
+            const data = await response.json();
+            const rate = Number(data?.rates?.CNY);
+            if(Number.isFinite(rate) && rate > 0) { state.usdToCny = rate; saveState(); updateAccountSummary(); }
+        } catch(e) { /* Use the persisted fallback exchange rate. */ }
+    }
+    function generateSimulatedPrice(symbol, prevData) {
+        const basePrices = { 'AAPL':185,'GOOGL':145,'MSFT':380,'AMZN':155,'TSLA':250,'META':370,'NVDA':490,'AMD':130,'JPM':175,'V':275,'600519.SS':1680,'000858.SZ':145,'300750.SZ':185,'002594.SZ':245,'601318.SS':42,'000333.SZ':62,'BTC-USD':65000,'ETH-USD':3400 };
+        const base = basePrices[symbol] || 100;
+        if (prevData?.price) {
+            const vol = symbol.includes('BTC')||symbol.includes('ETH')?0.008:0.015;
+            const change = (Math.random()-0.48)*vol*prevData.price;
+            const newPrice = Math.max(prevData.price+change, base*0.3);
+            const histPrices = [...(prevData.histPrices||[]), {time:new Date(),price:+newPrice.toFixed(2)}];
+            return { price: +newPrice.toFixed(2), change: +change.toFixed(2), changePercent: +((change/prevData.price)*100).toFixed(2), volume: Math.floor(Math.random()*10000000), name: prevData.name||symbol, market: prevData.market||'US', histPrices, timestamp: Date.now(), simulated:true, source: 'simulated' };
+        }
+        const histPrices = []; let simulatedPrice = base;
+        for(let i=23; i>=0; i--) {
+            simulatedPrice = Math.max(simulatedPrice + (Math.random()-0.5)*base*0.008, base*0.3);
+            histPrices.push({time:new Date(Date.now()-i*5*60*1000),price:+simulatedPrice.toFixed(2)});
+        }
+        const price = histPrices[histPrices.length-1].price;
+        const previous = histPrices[histPrices.length-2].price;
+        const change = price-previous;
+        return { price, change:+change.toFixed(2), changePercent:+((change/previous)*100).toFixed(2), volume: Math.floor(Math.random()*5000000), name: symbol, market: symbol.includes('.SS')||symbol.includes('.SZ')?'CN':symbol.includes('-USD')?'crypto':'US', histPrices, timestamp: Date.now(), simulated:true, source: 'simulated' };
+    }
+    async function fetchStockPrice(symbol) {
+        let result = null;
+        if (symbol.includes('-USD')) result = await fetchBinancePrice(symbol);
+        else if (symbol.includes('.SS') || symbol.includes('.SZ')) result = await fetchTencentPrice(symbol);
+        else result = await fetchFinnhubPrice(symbol);
+        const cached = state.priceCache[symbol];
+        if (!result && cached && !cached.simulated) result = { ...cached, stale: true };
+        if (!result) result = generateSimulatedPrice(symbol, cached);
+        if (result?.histPrices) {
+            if (!state.chartPrices[symbol]) state.chartPrices[symbol] = [];
+            for (let hp of result.histPrices) {
+                if (!state.chartPrices[symbol].find(e=>Math.abs(e.time-hp.time)<60000))
+                    state.chartPrices[symbol].push(hp);
+            }
+            if (state.chartPrices[symbol].length > 100) state.chartPrices[symbol] = state.chartPrices[symbol].slice(-100);
+        }
+        return result;
+    }
+
+    // 批量刷新
+    let realQuoteRetryTimer = null;
+    function updateMarketDataUi() {
+        const refreshed = Object.values(state.priceCache);
+        const simulatedCount = refreshed.filter(item => item.simulated).length;
+        const staleCount = refreshed.filter(item => item.stale).length;
+        updateDataStatus(simulatedCount === 0 && staleCount === 0, simulatedCount, refreshed.length, staleCount);
+        renderMarketTable(document.getElementById('marketFilter')?.value||'all');
+        renderPositions(); updateAccountSummary(); updateQuickTradeSelect(); updateChartSelect();
+        if(document.getElementById('chartSymbolSelect').value) updateChart();
+    }
+    function scheduleRealQuoteRetry() {
+        if(realQuoteRetryTimer || !Object.values(state.priceCache).some(item => item.simulated)) return;
+        realQuoteRetryTimer = setTimeout(async () => {
+            realQuoteRetryTimer = null;
+            const symbols = DEFAULT_STOCKS.filter(s => state.priceCache[s.symbol]?.simulated).map(s => s.symbol);
+            for(let i=0; i<symbols.length; i+=3) {
+                const batch = symbols.slice(i, i+3);
+                const results = await Promise.allSettled(batch.map(fetchStockPrice));
+                results.forEach((result, index) => { if(result.status === 'fulfilled') state.priceCache[batch[index]] = result.value; });
+                if(i+3 < symbols.length) await new Promise(resolve => setTimeout(resolve, 600));
+            }
+            updateMarketDataUi();
+        }, 2500);
+    }
+    async function refreshAllPrices(silent=false) {
+        fetchExchangeRate();
+        const symbols = DEFAULT_STOCKS.map(s=>s.symbol);
+        for (let i=0; i<symbols.length; i+=8) {
+            const batch = symbols.slice(i,i+8);
+            const results = await Promise.allSettled(batch.map(s=>fetchStockPrice(s)));
+            results.forEach((r,idx)=>{ if(r.status==='fulfilled'&&r.value) state.priceCache[batch[idx]]=r.value; });
+            if (i+8<symbols.length) await new Promise(r=>setTimeout(r,300));
+        }
+        document.getElementById('lastUpdateTime').textContent = new Date().toLocaleTimeString('zh-CN');
+        updateMarketDataUi();
+        scheduleRealQuoteRetry();
+    }
+
+    function updateDataStatus(online, simulatedCount=0, total=0, staleCount=0) {
+        document.getElementById('dataStatusDot').className = online ? 'status-dot online' : 'status-dot offline';
+        document.getElementById('dataStatusText').textContent = online ? '实时来源' : staleCount ? `延迟 ${staleCount}/${total}` : `模拟 ${simulatedCount}/${total}`;
+    }
+    function currencyForSymbol(symbol) {
+        return symbol && (symbol.includes('.SS') || symbol.includes('.SZ')) ? 'CNY' : 'USD';
+    }
+    function nativePriceToUsd(value, symbol='') {
+        return currencyForSymbol(symbol) === 'CNY' ? (Number(value)||0) / state.usdToCny : (Number(value)||0);
+    }
+    function formatMoney(value, symbol='') {
+        const currency = currencyForSymbol(symbol);
+        const amount = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value) || 0);
+        return currency === 'CNY' ? `CNY ¥${amount}` : `USD $${amount}`;
+    }
+
+    // UI渲染
+    function renderMarketTable(filter='all') {
+        const tbody = document.getElementById('marketTableBody');
+        const symbols = DEFAULT_STOCKS.filter(s=>filter==='all'||s.market===filter);
+        tbody.innerHTML = symbols.map(s=>{
+            const data = state.priceCache[s.symbol];
+            if(!data) return `<tr><td><strong>${s.symbol}</strong></td><td>${s.name}</td><td class="text-muted">加载中...</td><td>--</td><td>--</td><td><button class="btn btn-xs" onclick="manualRefreshSymbol('${s.symbol}')">🔄</button></td></tr>`;
+            const cls = data.changePercent>=0?'price-up':'price-down';
+            const arrow = data.changePercent>=0?'▲':'▼';
+            const source = data.simulated ? '<span class="data-source simulated">模拟</span>' : `<span class="data-source live">${data.stale ? '最近真实报价' : data.source || '实时'}</span>`;
+            return `<tr><td><strong>${s.symbol}</strong>${source}</td><td>${data.name||s.name}</td><td class="${cls}">${formatMoney(data.price, s.symbol)}</td><td class="${cls}">${arrow} ${Math.abs(data.changePercent).toFixed(2)}%</td><td class="text-muted">${data.volume>1e6?(data.volume/1e6).toFixed(1)+'M':data.volume>1e3?(data.volume/1e3).toFixed(1)+'K':data.volume}</td><td><button class="btn btn-xs" title="查看走势" onclick="openChartForSymbol('${s.symbol}')">趋势</button> <button class="btn btn-xs btn-primary" style="background:var(--green);border-color:var(--green);" onclick="quickBuyFromTable('${s.symbol}')">买</button> <button class="btn btn-xs btn-danger" onclick="quickSellFromTable('${s.symbol}')">卖</button></td></tr>`;
+        }).join('');
+    }
+
+    function renderPositions() {
+        const tbody = document.getElementById('positionsBody');
+        const syms = Object.keys(state.positions).filter(s=>state.positions[s].qty>0);
+        document.getElementById('positionCount').textContent = syms.length+'只';
+        if(syms.length===0) { tbody.innerHTML='<tr><td colspan="6" class="text-muted" style="text-align:center;padding:30px;">暂无持仓</td></tr>'; updateAccountSummary(); return; }
+        tbody.innerHTML = syms.map(sym=>{
+            const pos = state.positions[sym];
+            const data = state.priceCache[sym];
+            const cp = data?data.price:pos.avgCost;
+            const pnl = (nativePriceToUsd(cp, sym)-nativePriceToUsd(pos.avgCost, sym))*pos.qty;
+            const positionCostUsd = nativePriceToUsd(pos.avgCost, sym)*pos.qty;
+            const pnlP = positionCostUsd>0?pnl/positionCostUsd*100:0;
+            return `<tr><td><strong>${sym}</strong></td><td>${pos.qty}</td><td>${formatMoney(pos.avgCost, sym)}</td><td>${formatMoney(cp, sym)}</td><td class="${pnl>=0?'price-up':'price-down'}">${pnl>=0?'▲':'▼'} ${formatMoney(Math.abs(pnl), sym)} (${pnlP.toFixed(2)}%)</td><td><button class="btn btn-xs btn-danger" onclick="sellAllPosition('${sym}')">全部卖出</button></td></tr>`;
+        }).join('');
+        updateAccountSummary();
+    }
+
+    function updateAccountSummary() {
+        let holdVal = 0;
+        for(let [s,p] of Object.entries(state.positions)) {
+            if(p.qty<=0) continue;
+            const d = state.priceCache[s];
+            holdVal += nativePriceToUsd(d?d.price:p.avgCost, s)*p.qty;
+        }
+        const total = state.cash + holdVal;
+        const pnl = total - state.initialCash;
+        document.getElementById('totalAssets').textContent = formatMoney(total);
+        document.getElementById('cashValue').textContent = formatMoney(state.cash);
+        document.getElementById('holdingsValue').textContent = formatMoney(holdVal);
+        const pnlEl = document.getElementById('totalPnl');
+        pnlEl.textContent = (pnl>=0?'+':'')+formatMoney(Math.abs(pnl))+' ('+(state.initialCash>0?(pnl/state.initialCash*100).toFixed(2):0)+'%)';
+        pnlEl.className = 'value '+(pnl>=0?'positive':'negative');
+    }
+
+    function updateQuickTradeSelect() {
+        const sel = document.getElementById('quickTradeSymbol');
+        sel.innerHTML = '<option value="">选择股票...</option>'+DEFAULT_STOCKS.map(s=>{
+            const d = state.priceCache[s.symbol];
+            return `<option value="${s.symbol}">${s.symbol} - ${d?formatMoney(d.price, s.symbol):'--'}</option>`;
+        }).join('');
+        sel.onchange = ()=>updateQuickTradeInfo();
+    }
+    function updateQuickTradeInfo() {
+        const sym = document.getElementById('quickTradeSymbol').value;
+        const qty = parseInt(document.getElementById('quickTradeQty').value)||0;
+        const info = document.getElementById('quickTradeInfo');
+        if(!sym||qty<=0) { info.textContent='请选择股票并输入数量'; return; }
+        const d = state.priceCache[sym];
+        if(!d) { info.textContent='价格不可用'; return; }
+        const nativeAmount = d.price*qty*(1+state.feeRate);
+        const usdAmount = nativePriceToUsd(nativeAmount, sym);
+        info.textContent = `预计成交金额：${formatMoney(nativeAmount, sym)}；账户扣款：${formatMoney(usdAmount)}（含手续费${(state.feeRate*100).toFixed(2)}%）`;
+    }
+    document.getElementById('quickTradeQty').addEventListener('input', updateQuickTradeInfo);
+
+    function updateChartSelect() {
+        const sel = document.getElementById('chartSymbolSelect');
+        const cur = sel.value;
+        sel.innerHTML = DEFAULT_STOCKS.map(s=>`<option value="${s.symbol}" ${s.symbol===cur?'selected':''}>${s.symbol}</option>`).join('');
+        if(!sel.value) sel.value = DEFAULT_STOCKS[0].symbol;
+    }
+
+    // 图表
+    let priceChartInstance = null;
+    function updateChart(canvasId='priceChart') {
+        if(typeof Chart==='undefined') return;
+        const sym = document.getElementById('chartSymbolSelect').value;
+        if(!sym) return;
+        const prices = state.chartPrices[sym] || [];
+        if(prices.length===0) {
+            const d = state.priceCache[sym];
+            if(d) state.chartPrices[sym] = d.histPrices||[{time:new Date(),price:d.price}];
+        }
+        const chartData = state.chartPrices[sym]||[];
+        const labels = chartData.map(p=>new Date(p.time).toLocaleDateString('zh-CN',{month:'short',day:'numeric'})+' '+new Date(p.time).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}));
+        const dataPoints = chartData.map(p=>p.price);
+        const canvas = document.getElementById(canvasId);
+        if(!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if(priceChartInstance) priceChartInstance.destroy();
+        if(dataPoints.length===0) return;
+        const up = dataPoints[dataPoints.length-1]>=dataPoints[0];
+        priceChartInstance = new Chart(ctx, {
+            type:'line',
+            data:{labels,datasets:[{label:sym+' 价格',data:dataPoints,borderColor:up?'#00c853':'#ff3d4f',backgroundColor:up?'rgba(0,200,83,0.1)':'rgba(255,61,79,0.1)',fill:true,tension:0.3,pointRadius:0,borderWidth:2}]},
+            options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#7d8590',maxTicksLimit:6},grid:{color:'rgba(37,43,54,0.5)'}},y:{ticks:{color:'#7d8590',callback:v=>v.toFixed(2)},grid:{color:'rgba(37,43,54,0.5)'}}}}
+        });
+    }
+    function openChartForSymbol(symbol) {
+        document.getElementById('chartSymbolSelect').value = symbol;
+        document.getElementById('chartModalTitle').textContent = `${symbol} 价格走势`;
+        document.getElementById('chartModal').style.display = 'flex';
+        updateChart('modalPriceChart');
+    }
+    function closeChartModal() {
+        document.getElementById('chartModal').style.display = 'none';
+        if(priceChartInstance) { priceChartInstance.destroy(); priceChartInstance = null; }
+    }
+
+    // 交易
+    function executeTrade(symbol, action, quantity, source='manual') {
+        const data = state.priceCache[symbol];
+        if(!data?.price) { showToast('无价格数据','error'); return false; }
+        quantity = Math.floor(quantity);
+        if(quantity<=0) { showToast('数量无效','error'); return false; }
+        const price = data.price;
+        if(action==='buy') {
+            const cost = price*quantity*(1+state.feeRate);
+            const costUsd = nativePriceToUsd(cost, symbol);
+            if(costUsd>state.cash) { showToast('现金不足（账户以 USD 结算）','error'); return false; }
+            state.cash -= costUsd;
+            if(!state.positions[symbol]) state.positions[symbol]={qty:0,avgCost:0};
+            const pos = state.positions[symbol];
+            const totalCost = pos.avgCost*pos.qty + price*quantity;
+            pos.qty += quantity;
+            pos.avgCost = pos.qty>0?totalCost/pos.qty:0;
+            state.tradeHistory.unshift({time:new Date().toISOString(),symbol,action:'buy',quantity,price,cost,cashImpactUsd:costUsd,source});
+            showToast(`买入 ${symbol} ×${quantity}`, 'success');
+        } else if(action==='sell') {
+            const pos = state.positions[symbol];
+            if(!pos||pos.qty<quantity) { showToast('持仓不足','error'); return false; }
+            const proceeds = price*quantity*(1-state.feeRate);
+            const proceedsUsd = nativePriceToUsd(proceeds, symbol);
+            state.cash += proceedsUsd;
+            pos.qty -= quantity;
+            if(pos.qty<=0) delete state.positions[symbol];
+            state.tradeHistory.unshift({time:new Date().toISOString(),symbol,action:'sell',quantity,price,proceeds,cashImpactUsd:proceedsUsd,source});
+            showToast(`卖出 ${symbol} ×${quantity}`, 'success');
+        }
+        saveState();
+        renderPositions();
+        renderMarketTable(document.getElementById('marketFilter')?.value||'all');
+        updateAccountSummary();
+        renderTradeHistory();
+        updateQuickTradeSelect();
+        return true;
+    }
+
+    function quickTrade(action) {
+        const sym = document.getElementById('quickTradeSymbol').value;
+        const qty = parseInt(document.getElementById('quickTradeQty').value)||0;
+        if(!sym) showToast('请选择股票','error');
+        else if(qty<=0) showToast('数量无效','error');
+        else executeTrade(sym, action, qty, 'manual');
+    }
+    function quickBuyFromTable(sym) { document.getElementById('quickTradeSymbol').value=sym; document.getElementById('quickTradeQty').value=10; updateQuickTradeInfo(); showToast(`已选择 ${sym}`,'info'); }
+    function quickSellFromTable(sym) {
+        const pos = state.positions[sym];
+        if(!pos?.qty) { showToast('未持仓','error'); return; }
+        document.getElementById('quickTradeSymbol').value=sym; document.getElementById('quickTradeQty').value=pos.qty; updateQuickTradeInfo();
+    }
+    function sellAllPosition(sym) {
+        const pos = state.positions[sym];
+        if(!pos?.qty) return;
+        if(confirm(`卖出全部${sym}？`)) executeTrade(sym,'sell',pos.qty,'manual');
+    }
+
+    function renderTradeHistory() {
+        const tbody = document.getElementById('tradeHistoryBody');
+        if(!state.tradeHistory.length) { tbody.innerHTML='<tr><td colspan="7" class="text-muted" style="text-align:center;">暂无记录</td></tr>'; return; }
+        tbody.innerHTML = state.tradeHistory.slice(0,50).map(t=>{
+            const time = new Date(t.time).toLocaleString('zh-CN');
+            return `<tr><td>${time}</td><td>${t.symbol}</td><td>${t.action==='buy'?'<span class="tag tag-buy">买入</span>':'<span class="tag tag-sell">卖出</span>'}</td><td>${t.quantity}</td><td>${formatMoney(t.price, t.symbol)}</td><td>${formatMoney(t.cost||t.proceeds||t.price*t.quantity, t.symbol)}</td><td>${t.source==='ai'?'<span class="tag tag-ai">AI</span>':'手动'}</td></tr>`;
+        }).join('');
+    }
+    function clearTradeHistory() { if(confirm('清空记录？')) { state.tradeHistory=[]; saveState(); renderTradeHistory(); } }
+
+    // AI模块
+    function openAIPanel() {
+        document.getElementById('aiModal').style.display='flex';
+        document.getElementById('aiApiProvider').value = state.aiSettings.provider||'openai';
+        document.getElementById('aiApiUrl').value = state.aiSettings.apiUrl;
+        document.getElementById('aiApiKey').value = state.aiSettings.apiKey;
+        document.getElementById('finnhubKey').value = state.aiSettings.finnhubKey || '';
+        document.getElementById('aiModel').value = state.aiSettings.model;
+        document.getElementById('aiAnalysisInterval').value = state.aiSettings.analysisInterval || 5;
+        document.getElementById('aiExtraPrompt').value = state.aiSettings.extraPrompt||'';
+        document.getElementById('aiResult').style.display='none';
+    }
+    function closeAIPanel() { document.getElementById('aiModal').style.display='none'; }
+    function updateApiUrl() {
+        const prov = document.getElementById('aiApiProvider').value;
+        if(prov==='openai') { document.getElementById('aiApiUrl').value='https://api.openai.com/v1'; document.getElementById('aiModel').value='gpt-4o-mini'; }
+        else if(prov==='deepseek') { document.getElementById('aiApiUrl').value='https://api.deepseek.com/v1'; document.getElementById('aiModel').value='deepseek-chat'; }
+    }
+    function saveAISettings() {
+        state.aiSettings.apiUrl = document.getElementById('aiApiUrl').value.trim();
+        state.aiSettings.apiKey = document.getElementById('aiApiKey').value.trim();
+        state.aiSettings.finnhubKey = document.getElementById('finnhubKey').value.trim();
+        state.aiSettings.model = document.getElementById('aiModel').value.trim();
+        state.aiSettings.provider = document.getElementById('aiApiProvider').value;
+        const analysisInterval = parseInt(document.getElementById('aiAnalysisInterval').value, 10);
+        state.aiSettings.analysisInterval = Number.isInteger(analysisInterval) && analysisInterval >= 1 && analysisInterval <= 1440 ? analysisInterval : 5;
+        state.aiSettings.extraPrompt = document.getElementById('aiExtraPrompt').value.trim();
+        if(state.autoTradeEnabled) startAutoTrade();
+        saveState();
+        updateAIStatusBadge();
+        updateAutoTradeButton();
+        showToast('AI设置已保存','success');
+    }
+    function updateAIStatusBadge() {
+        const badge = document.getElementById('aiStatusBadge');
+        const txt = document.getElementById('aiStatusText');
+        if(state.aiSettings.apiKey) {
+            badge.textContent='已配置'; badge.style.background='rgba(0,200,83,0.2)'; badge.style.color='#4ade80';
+            txt.textContent='AI已就绪';
+        } else {
+            badge.textContent='待配置'; badge.style.background='rgba(108,92,231,0.25)'; badge.style.color='#b8a9ff';
+            txt.textContent='请设置API密钥';
+        }
+    }
+    function updateAutoTradeButton() {
+        const btn = document.getElementById('autoTradeBtn');
+        btn.disabled = !state.aiSettings.apiKey;
+        const minutes = state.aiSettings.analysisInterval || 5;
+        btn.textContent = state.autoTradeEnabled ? `⏱ 自动交易：运行中（每${minutes}分钟）` : `⏱ 自动交易：关闭（每${minutes}分钟）`;
+    }
+    function toggleAutoTrade() {
+        if(!state.aiSettings.apiKey) { showToast('请先配置API','error'); return; }
+        state.autoTradeEnabled = !state.autoTradeEnabled;
+        if(state.autoTradeEnabled) startAutoTrade(); else stopAutoTrade();
+        updateAutoTradeButton(); saveState();
+    }
+    function startAutoTrade() {
+        stopAutoTrade(); state.autoTradeEnabled=true;
+        const minutes = Math.max(Number(state.aiSettings.analysisInterval) || 5, 1);
+        state.autoTradeIntervalId = setInterval(()=>runAIAnalysisSilent(), minutes*60*1000);
+        updateAutoTradeButton();
+    }
+    function stopAutoTrade() {
+        state.autoTradeEnabled=false;
+        if(state.autoTradeIntervalId) { clearInterval(state.autoTradeIntervalId); state.autoTradeIntervalId=null; }
+        updateAutoTradeButton();
+    }
+    function escapeHtml(value) {
+        const div = document.createElement('div'); div.textContent = String(value || '无'); return div.innerHTML;
+    }
+    function renderLastAIResult() {
+        const el = document.getElementById('lastAiAnalysis');
+        const result = state.lastAIResult;
+        if(!result) { el.textContent = '暂无 AI 分析结果'; return; }
+        const time = new Date(result.time).toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
+        const summary = escapeHtml(result.analysis).slice(0, 260);
+        el.innerHTML = `<div style="color:#b8a9ff;font-weight:600;">${result.automatic ? '自动' : '手动'}分析 ${time}</div><div>${summary}</div><div class="text-muted">执行 ${result.executed} 笔，跳过 ${result.skipped} 笔</div>`;
+    }
+    async function runAIAnalysisSilent() { try { await performAIAnalysis(false); } catch(e) {} }
+    async function runAIAnalysis() {
+        saveAISettings();
+        if(!state.aiSettings.apiKey) { showToast('请先设置API密钥','error'); return; }
+        const btn = document.getElementById('runAiBtn'); btn.disabled=true; btn.textContent='⏳ 分析中...';
+        const resEl = document.getElementById('aiResult'); resEl.style.display='block'; resEl.innerHTML='<div class="text-muted">🔄 AI分析中...</div>';
+        try { await performAIAnalysis(true); } catch(e) { resEl.innerHTML=`<div style="color:#f87171;">❌ ${e.message}</div>`; showToast('AI分析失败','error'); }
+        finally { btn.disabled=false; btn.textContent='🚀 立即分析并交易'; }
+    }
+    async function performAIAnalysis(showResult=true) {
+        const marketSummary = DEFAULT_STOCKS.map(s=>{
+            const d = state.priceCache[s.symbol];
+            return d ? `${s.symbol} ${d.name}: ${formatMoney(d.price, s.symbol)} (${d.changePercent>=0?'+':''}${d.changePercent.toFixed(2)}%) vol:${d.volume}` : `${s.symbol} 无数据`;
+        }).join('\n');
+        let holdStr = ''; let holdVal=0;
+        for(let [s,p] of Object.entries(state.positions)) {
+            if(p.qty<=0) continue;
+            const d=state.priceCache[s]; const cp=d?d.price:p.avgCost;
+            holdVal+=nativePriceToUsd(cp, s)*p.qty;
+            holdStr+=`${s}: ${p.qty}股 成本${formatMoney(p.avgCost, s)} 现价${formatMoney(cp, s)}\n`;
+        }
+        const total = state.cash+holdVal;
+        const system = `你是一个量化交易AI。账户本币为 USD；现金 ${formatMoney(state.cash)}，总资产 ${formatMoney(total)}。手续费 ${(state.feeRate*100).toFixed(2)}%。A股报价以 CNY 显示，系统会按 USD/CNY=${state.usdToCny.toFixed(4)} 自动折算。只返回纯净 JSON 字符串，不要包含 Markdown、不要使用 \`\`\`json 标记。格式必须为：{"analysis":"...","decisions":[{"symbol":"...","action":"buy|sell|hold","quantity":整数,"reason":"..."}]}。最多3个交易。`;
+        const user = `持仓：\n${holdStr||'空仓'}\n市场：\n${marketSummary}\n${state.aiSettings.extraPrompt?'附加指示：'+state.aiSettings.extraPrompt:''}`;
+        const resp = await fetch(state.aiSettings.apiUrl.replace(/\/+$/,'')+'/chat/completions', {
+            method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+state.aiSettings.apiKey},
+            body: JSON.stringify({model:state.aiSettings.model, messages:[{role:'system',content:system},{role:'user',content:user}], temperature:0.3, max_tokens:1000, response_format:{type:'json_object'}}),
+            signal: AbortSignal.timeout(30000)
+        });
+        if(!resp.ok) throw new Error(`API错误 ${resp.status}`);
+        const data = await resp.json();
+        const content = data.choices?.[0]?.message?.content;
+        if(!content) throw new Error('AI返回空');
+        const match = content.match(/\{[\s\S]*\}/);
+        if(!match) throw new Error('未找到JSON');
+        const parsed = JSON.parse(match[0]);
+        const exec = []; const skip = [];
+        for(let d of parsed.decisions||[]) {
+            if(d.action==='hold') continue;
+            const qty = Math.floor(d.quantity||0);
+            if(qty<=0) { skip.push(d); continue; }
+            const price = state.priceCache[d.symbol]?.price;
+            if(!price) { skip.push(d); continue; }
+            if(d.action==='sell' && (!state.positions[d.symbol]||state.positions[d.symbol].qty<qty)) { skip.push(d); continue; }
+            if(d.action==='buy' && nativePriceToUsd(price*qty*(1+state.feeRate), d.symbol)>state.cash*0.8) { skip.push(d); continue; }
+            const ok = executeTrade(d.symbol, d.action, qty, 'ai');
+            if(ok) exec.push(d); else skip.push(d);
+        }
+        state.lastAIResult = { time: new Date().toISOString(), analysis: parsed.analysis || 'AI 未提供文字分析', executed: exec.length, skipped: skip.length, automatic: !showResult };
+        saveState(); renderLastAIResult();
+        if(showResult) {
+            const resEl = document.getElementById('aiResult');
+            let html = `<div style="color:#fff;font-weight:600;">🤖 AI分析</div><div style="background:rgba(108,92,231,0.1);padding:8px;border-radius:6px;">${parsed.analysis||'无'}</div>`;
+            if(exec.length) html += `<div style="color:#4ade80;">✅ 执行${exec.length}笔</div>`;
+            if(skip.length) html += `<div style="color:#f0b90b;">⚠️ 跳过${skip.length}笔</div>`;
+            resEl.innerHTML = html;
+        }
+    }
+
+    // 设置
+    function openSettingsModal() { document.getElementById('settingsModal').style.display='flex'; document.getElementById('initialCash').value=state.initialCash; document.getElementById('feeRate').value=(state.feeRate*100).toFixed(2); document.getElementById('refreshInterval').value=state.refreshInterval; }
+    function closeSettingsModal() { document.getElementById('settingsModal').style.display='none'; }
+    function saveSettings() {
+        const cash = parseFloat(document.getElementById('initialCash').value);
+        const fee = parseFloat(document.getElementById('feeRate').value)/100;
+        const interval = parseInt(document.getElementById('refreshInterval').value);
+        if(isNaN(cash)||cash<100) showToast('资金至少100','error');
+        else if(isNaN(fee)||fee<0||fee>0.05) showToast('手续费0-5%','error');
+        else if(isNaN(interval)||interval<5) showToast('刷新间隔至少5秒','error');
+        else {
+            state.cash += cash - state.initialCash; state.initialCash = cash; state.feeRate = fee; state.refreshInterval = interval;
+            saveState(); updateAccountSummary(); closeSettingsModal(); showToast('设置已保存','success');
+            restartRefreshInterval();
+        }
+    }
+    function resetAccount() {
+        if(confirm('重置账户？将清空持仓和记录。')) {
+            state.cash = state.initialCash; state.positions = {}; state.tradeHistory = []; state.chartPrices = {};
+            saveState(); renderPositions(); renderMarketTable('all'); updateAccountSummary(); renderTradeHistory(); closeSettingsModal(); showToast('已重置','info');
+        }
+    }
+
+    // 手动刷新
+    async function manualRefreshSymbol(sym) {
+        const res = await fetchStockPrice(sym);
+        if(res) { state.priceCache[sym]=res; renderMarketTable(document.getElementById('marketFilter')?.value||'all'); renderPositions(); updateAccountSummary(); updateQuickTradeSelect(); if(document.getElementById('chartSymbolSelect').value===sym) updateChart(); showToast(`${sym} 刷新成功`,'success'); }
+        else showToast(`${sym} 失败`,'error');
+    }
+    function filterMarket() { renderMarketTable(document.getElementById('marketFilter').value); }
+
+    // 关闭弹窗
+    document.addEventListener('click',e=>{ if(e.target.id==='aiModal') closeAIPanel(); if(e.target.id==='settingsModal') closeSettingsModal(); if(e.target.id==='chartModal') closeChartModal(); });
+    document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeAIPanel(); closeSettingsModal(); closeChartModal(); } if(e.ctrlKey&&e.key==='r'){ e.preventDefault(); refreshAllPrices(); } });
+
+    // 定时刷新
+    let refreshTimer;
+    function restartRefreshInterval() {
+        if(refreshTimer) clearInterval(refreshTimer);
+        refreshTimer = setInterval(()=>refreshAllPrices(true), Math.max(state.refreshInterval,10)*1000);
+    }
+
+    // 初始化
+    async function init() {
+        loadState();
+        updateAIStatusBadge();
+        updateAutoTradeButton();
+        renderLastAIResult();
+        if(state.autoTradeEnabled && state.aiSettings.apiKey) startAutoTrade();
+        renderMarketTable('all');
+        renderTradeHistory();
+        updateQuickTradeSelect();
+        updateChartSelect();
+        updateAccountSummary();
+        await refreshAllPrices(true);
+        restartRefreshInterval();
+        setTimeout(()=>{ if(document.getElementById('chartSymbolSelect').value) updateChart(); }, 500);
+        console.log('✅ QuantSim 已就绪');
+    }
+    init();
+</script>
+</body>
+</html>

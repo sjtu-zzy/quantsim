@@ -1,0 +1,11 @@
+# Generated copies and local working files
+outputs/
+work/
+
+# Local credentials and machine-specific configuration
+.env
+.env.*
+*.local
+*.pem
+*.key
+secrets/
